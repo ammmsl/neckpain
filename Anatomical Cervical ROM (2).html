@@ -1,0 +1,937 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Anatomical Cervical ROM Quantifier</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #f8fafc; font-family: 'Inter', sans-serif; }
+        #canvas-container { width: 100%; height: 100%; min-height: 400px; display: block; outline: none; }
+        
+        /* Custom Sliders */
+        input[type=range] {
+            -webkit-appearance: none;
+            width: 100%;
+            background: transparent;
+        }
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            height: 18px;
+            width: 18px;
+            border-radius: 50%;
+            cursor: pointer;
+            margin-top: -7px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.4);
+            transition: transform 0.1s;
+        }
+        input[type=range]::-webkit-slider-thumb:active { transform: scale(1.15); }
+        input[type=range]::-webkit-slider-runnable-track {
+            width: 100%;
+            height: 4px;
+            cursor: pointer;
+            background: #cbd5e1;
+            border-radius: 2px;
+        }
+        input[type=range]:focus { outline: none; }
+        
+        /* Colored Thumbs */
+        .slider-x::-webkit-slider-thumb { background: #ef4444; }
+        .slider-y::-webkit-slider-thumb { background: #22c55e; }
+        .slider-z::-webkit-slider-thumb { background: #3b82f6; }
+        .slider-t::-webkit-slider-thumb { background: #f59e0b; }
+
+        /* Custom Scrollbar */
+        #log-area::-webkit-scrollbar { width: 6px; }
+        #log-area::-webkit-scrollbar-track { background: #f1f5f9; }
+        #log-area::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+
+        /* ViewCube */
+        .view-cube-container {
+            position: absolute;
+            top: 1rem;
+            right: 1rem;
+            width: 60px;
+            height: 60px;
+            perspective: 400px;
+            z-index: 50;
+        }
+        .view-cube {
+            width: 100%;
+            height: 100%;
+            position: relative;
+            transform-style: preserve-3d;
+            transition: transform 0.05s linear;
+        }
+        .vc-face {
+            position: absolute;
+            width: 60px;
+            height: 60px;
+            background: rgba(15, 23, 42, 0.85);
+            border: 2px solid #0ea5e9;
+            color: #e2e8f0;
+            display: grid;
+            grid-template-columns: 25% 50% 25%;
+            grid-template-rows: 25% 50% 25%;
+            box-sizing: border-box;
+            user-select: none;
+            box-shadow: inset 0 0 10px rgba(14, 165, 233, 0.3);
+        }
+        .vc-zone {
+            transition: background 0.1s;
+            cursor: pointer;
+        }
+        .vc-zone:hover {
+            background: rgba(14, 165, 233, 0.7);
+            box-shadow: inset 0 0 5px rgba(255, 255, 255, 0.8);
+        }
+        .vc-front  { transform: rotateY(  0deg) translateZ(30px); }
+        .vc-back   { transform: rotateY(180deg) translateZ(30px); }
+        .vc-right  { transform: rotateY( 90deg) translateZ(30px); }
+        .vc-left   { transform: rotateY(-90deg) translateZ(30px); }
+        .vc-top    { transform: rotateX( 90deg) translateZ(30px); }
+        .vc-bottom { transform: rotateX(-90deg) translateZ(30px); }
+    </style>
+</head>
+<body class="h-screen flex flex-col md:flex-row overflow-hidden text-slate-800">
+
+    <!-- Left Side: 3D Viewer -->
+    <div class="w-full md:w-3/5 lg:w-2/3 h-1/2 md:h-full relative bg-slate-900 border-r border-slate-700 shadow-inner">
+        <!-- Overlay HUD -->
+        <div class="absolute top-4 left-4 z-10 text-white p-4 rounded-lg bg-slate-900/80 backdrop-blur-md shadow-xl border border-slate-700 text-sm">
+            <h2 class="font-bold text-lg text-sky-400 mb-2">Axes Guide & Controls</h2>
+            <div class="flex items-center gap-2 mb-1"><div class="w-3 h-3 bg-red-500 rounded-full shadow-[0_0_8px_rgba(239,68,68,0.8)]"></div> <span>X: Sagittal (Flex/Ext)</span></div>
+            <div class="flex items-center gap-2 mb-1"><div class="w-3 h-3 bg-green-500 rounded-full shadow-[0_0_8px_rgba(34,197,94,0.8)]"></div> <span>Y: Transverse (Rotation)</span></div>
+            <div class="flex items-center gap-2 mb-1"><div class="w-3 h-3 bg-blue-500 rounded-full shadow-[0_0_8px_rgba(59,130,246,0.8)]"></div> <span>Z: Coronal (Lateral Bend)</span></div>
+            <div class="flex items-center gap-2 mb-3"><div class="w-3 h-3 bg-amber-500 rounded-full shadow-[0_0_8px_rgba(245,158,11,0.8)]"></div> <span>T: Translation (Forward/Back)</span></div>
+            <div class="border-t border-slate-600 pt-3 text-xs text-slate-300 space-y-1.5">
+                <span class="block">🖱️ <b>Left Click + Drag:</b> Rotate View</span>
+                <span class="block">🖱️ <b>Scroll Wheel:</b> Zoom In/Out</span>
+                <span class="block">🖱️ <b>Right Click + Drag:</b> Pan View</span>
+            </div>
+            <div class="border-t border-slate-600 pt-3 mt-3 text-[10px] text-slate-400 space-y-0.5">
+                <span class="block font-bold text-slate-300 uppercase tracking-wider mb-1">Segmental Model</span>
+                <span class="block">C0-C1: 20% F/E, 0% Rot, 10% Lat</span>
+                <span class="block">C1-C2: 10% F/E, 50% Rot, 0% Lat</span>
+                <span class="block">C2-C7: 70% F/E, 50% Rot, 90% Lat</span>
+                <span class="block mt-1 text-slate-500">Caudal gradient + rotation-lateral bend coupling (0.6:1)</span>
+            </div>
+        </div>
+
+        <!-- ViewCube UI -->
+        <div class="view-cube-container">
+            <div id="view-cube" class="view-cube">
+                <div class="vc-face vc-front" data-face="front"></div>
+                <div class="vc-face vc-back" data-face="back"></div>
+                <div class="vc-face vc-right" data-face="right"></div>
+                <div class="vc-face vc-left" data-face="left"></div>
+                <div class="vc-face vc-top" data-face="top"></div>
+                <div class="vc-face vc-bottom" data-face="bottom"></div>
+            </div>
+        </div>
+
+        <div id="canvas-container"></div>
+    </div>
+
+    <!-- Right Side: Controls and Logs -->
+    <div class="w-full md:w-2/5 lg:w-1/3 h-1/2 md:h-full flex flex-col bg-white overflow-hidden shadow-2xl z-20">
+        
+        <div class="p-5 border-b border-slate-200 bg-slate-50 shrink-0">
+            <h1 class="text-2xl font-bold text-slate-800 tracking-tight">Kinematic ROM Tracker</h1>
+            <p class="text-xs text-slate-500 mt-1">Anatomically distributed segmental movement. Norms: Flex 50°, Ext 70°, Rot 80°, Lat 45°. Adjust to pain threshold, then log.</p>
+        </div>
+
+        <!-- Sliders Container -->
+        <div class="p-5 shrink-0 space-y-4 overflow-y-auto max-h-[50%]">
+            
+            <!-- X Axis Slider -->
+            <div class="space-y-1.5">
+                <div class="flex justify-between items-center">
+                    <label class="font-semibold text-slate-700 text-sm">X: Flexion / Extension</label>
+                    <span id="val-x" class="font-mono text-sm font-bold text-red-600 bg-red-50 border border-red-100 px-2 py-0.5 rounded">0°</span>
+                </div>
+                <div class="flex justify-between text-[10px] text-slate-400 font-bold px-1 uppercase tracking-wider">
+                    <span>-70° (Look Up)</span>
+                    <span>Neutral</span>
+                    <span>+50° (Look Down)</span>
+                </div>
+                <input type="range" id="slider-x" min="-70" max="50" value="0" class="slider-x">
+            </div>
+
+            <!-- Y Axis Slider -->
+            <div class="space-y-1.5">
+                <div class="flex justify-between items-center">
+                    <label class="font-semibold text-slate-700 text-sm">Y: Axial Rotation</label>
+                    <span id="val-y" class="font-mono text-sm font-bold text-green-600 bg-green-50 border border-green-100 px-2 py-0.5 rounded">0°</span>
+                </div>
+                <div class="flex justify-between text-[10px] text-slate-400 font-bold px-1 uppercase tracking-wider">
+                    <span>-80° (Turn Right)</span>
+                    <span>Neutral</span>
+                    <span>+80° (Turn Left)</span>
+                </div>
+                <input type="range" id="slider-y" min="-80" max="80" value="0" class="slider-y">
+            </div>
+
+            <!-- Z Axis Slider -->
+            <div class="space-y-1.5">
+                <div class="flex justify-between items-center">
+                    <label class="font-semibold text-slate-700 text-sm">Z: Lateral Bending</label>
+                    <span id="val-z" class="font-mono text-sm font-bold text-blue-600 bg-blue-50 border border-blue-100 px-2 py-0.5 rounded">0°</span>
+                </div>
+                <div class="flex justify-between text-[10px] text-slate-400 font-bold px-1 uppercase tracking-wider">
+                    <span>-45° (Tilt Right)</span>
+                    <span>Neutral</span>
+                    <span>+45° (Tilt Left)</span>
+                </div>
+                <input type="range" id="slider-z" min="-45" max="45" value="0" class="slider-z">
+            </div>
+
+            <!-- T Translation Slider -->
+            <div class="space-y-1.5">
+                <div class="flex justify-between items-center">
+                    <label class="font-semibold text-slate-700 text-sm">Translation (Forwards/Back)</label>
+                    <span id="val-t" class="font-mono text-sm font-bold text-amber-600 bg-amber-50 border border-amber-100 px-2 py-0.5 rounded">0mm</span>
+                </div>
+                <div class="flex justify-between text-[10px] text-slate-400 font-bold px-1 uppercase tracking-wider">
+                    <span>-20mm (Retract)</span>
+                    <span>Neutral</span>
+                    <span>+50mm (Protrude)</span>
+                </div>
+                <input type="range" id="slider-t" min="-20" max="50" value="0" class="slider-t">
+            </div>
+
+            <!-- Action Buttons -->
+            <div class="flex gap-3 pt-1">
+                <button id="btn-reset" class="flex-1 py-2 px-4 border border-slate-300 rounded-md shadow-sm text-sm font-bold text-slate-600 bg-white hover:bg-slate-50 focus:ring-2 focus:ring-sky-500 transition-colors">
+                    Reset
+                </button>
+                <button id="btn-log" class="flex-1 py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-bold text-white bg-sky-600 hover:bg-sky-700 focus:ring-2 focus:ring-sky-500 transition-colors">
+                    Log Threshold
+                </button>
+            </div>
+        </div>
+
+        <!-- Logs Area -->
+        <div class="flex-1 bg-slate-50 border-t border-slate-200 flex flex-col min-h-0">
+            <div class="px-5 py-2.5 border-b border-slate-200 bg-slate-100 flex justify-between items-center shadow-inner">
+                <div>
+                    <h3 class="font-semibold text-slate-700 text-xs uppercase tracking-wider">Clinical Log</h3>
+                    <span class="text-[10px] text-slate-500 font-medium">Click a log to view</span>
+                </div>
+                <div class="flex gap-2">
+                    <button id="btn-import" class="text-[10px] px-2 py-1 bg-white border border-slate-300 rounded hover:bg-slate-50 text-slate-600 font-bold transition-colors">Import</button>
+                    <button id="btn-export" class="text-[10px] px-2 py-1 bg-sky-100 border border-sky-200 rounded hover:bg-sky-200 text-sky-700 font-bold transition-colors">Export</button>
+                    <input type="file" id="file-import" accept=".json" class="hidden">
+                </div>
+            </div>
+            <div id="log-area" class="flex-1 overflow-y-auto p-4 space-y-3">
+                <div id="empty-state" class="text-center text-slate-400 text-sm italic mt-6 px-4">
+                    Move sliders to the point of pain/resistance, then log the entry. Hard limits reflect true anatomical restrictions.
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ==========================================
+        // 1. THREE.JS SCENE SETUP
+        // ==========================================
+        const container = document.getElementById('canvas-container');
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color('#020617'); // Deep blue/slate background
+
+        const camera = new THREE.PerspectiveCamera(40, container.clientWidth / container.clientHeight, 0.1, 1000);
+        camera.position.set(12, 10, 16); 
+        
+        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+        renderer.setSize(container.clientWidth, container.clientHeight);
+        renderer.setPixelRatio(window.devicePixelRatio);
+        container.appendChild(renderer.domElement);
+
+        const controls = new THREE.OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.05;
+        controls.target.set(0, 6, 0); 
+
+        scene.add(new THREE.AmbientLight(0xffffff, 0.3));
+
+        // ==========================================
+        // 2. MATERIALS & PROCEDURAL GEOMETRY
+        // ==========================================
+        const boneMat = new THREE.MeshBasicMaterial({ 
+            color: 0x0284c7, 
+            transparent: true, 
+            opacity: 0.15,
+            depthWrite: false,
+            side: THREE.DoubleSide
+        });
+        const edgeMat = new THREE.LineBasicMaterial({ 
+            color: 0x38bdf8, 
+            transparent: true, 
+            opacity: 0.8 
+        });
+
+        function createBone(geometry) {
+            const group = new THREE.Group();
+            const mesh = new THREE.Mesh(geometry, boneMat);
+            const edges = new THREE.LineSegments(new THREE.EdgesGeometry(geometry, 15), edgeMat);
+            group.add(mesh);
+            group.add(edges);
+            return group;
+        }
+
+        function createVertebra(type) {
+            const group = new THREE.Group();
+            
+            if (type === 'C1') {
+                const ringGeo = new THREE.TorusGeometry(0.7, 0.2, 8, 16);
+                const ring = createBone(ringGeo);
+                ring.rotation.x = Math.PI / 2;
+                group.add(ring);
+                
+                const tpGeo = new THREE.BoxGeometry(2.6, 0.3, 0.5);
+                const tp = createBone(tpGeo);
+                group.add(tp);
+            } else if (type === 'C2') {
+                const bodyGeo = new THREE.CylinderGeometry(0.6, 0.6, 0.5, 16);
+                const body = createBone(bodyGeo);
+                body.position.z = 0.4;
+                group.add(body);
+
+                const densGeo = new THREE.CylinderGeometry(0.2, 0.2, 0.8, 8);
+                const dens = createBone(densGeo);
+                dens.position.set(0, 0.6, 0.4);
+                group.add(dens);
+
+                const archGeo = new THREE.CylinderGeometry(0.5, 0.5, 0.4, 16, 1, true, 0, Math.PI);
+                const arch = createBone(archGeo);
+                arch.position.set(0, 0, -0.2);
+                group.add(arch);
+
+                const spGeo = new THREE.BoxGeometry(0.3, 0.4, 1.0);
+                const sp = createBone(spGeo);
+                sp.position.set(0, -0.1, -0.8);
+                sp.rotation.x = -0.2;
+                group.add(sp);
+            } else {
+                const bodyGeo = new THREE.CylinderGeometry(0.65, 0.65, 0.6, 16);
+                const body = createBone(bodyGeo);
+                body.position.z = 0.5;
+                group.add(body);
+
+                const tpGeo = new THREE.BoxGeometry(2.2, 0.3, 0.4);
+                const tp = createBone(tpGeo);
+                tp.position.z = 0.2;
+                group.add(tp);
+
+                const archGeo = new THREE.CylinderGeometry(0.55, 0.55, 0.5, 16, 1, true, 0, Math.PI);
+                const arch = createBone(archGeo);
+                arch.position.set(0, 0, -0.1);
+                group.add(arch);
+
+                const spLength = type === 'C7' ? 1.6 : 1.0; 
+                const spGeo = new THREE.BoxGeometry(0.2, 0.3, spLength);
+                const sp = createBone(spGeo);
+                sp.position.set(0, -0.2, -(spLength/2 + 0.3));
+                sp.rotation.x = -0.4; 
+                group.add(sp);
+            }
+            return group;
+        }
+
+        function createSkull() {
+            const group = new THREE.Group();
+            
+            // Cranium
+            const craniumGeo = new THREE.SphereGeometry(2.3, 24, 24);
+            const cranium = createBone(craniumGeo);
+            cranium.position.set(0, 2.0, 0.2);
+            group.add(cranium);
+
+            // Facial Structure Base
+            const faceGeo = new THREE.BoxGeometry(2.8, 2.0, 1.8);
+            const face = createBone(faceGeo);
+            face.position.set(0, 0.6, 1.8);
+            group.add(face);
+
+            // Jaw / Mandible - Scaled down and angled for anatomical correctness
+            const jawGeo = new THREE.BoxGeometry(2.2, 1.0, 1.8);
+            const jaw = createBone(jawGeo);
+            jaw.position.set(0, -0.7, 1.4); 
+            jaw.rotation.x = 0.15;
+            group.add(jaw);
+
+            // Nasal Cavity
+            const noseGeo = new THREE.BoxGeometry(0.5, 0.8, 0.5);
+            const nose = new THREE.Mesh(noseGeo, new THREE.MeshBasicMaterial({ color: 0x020617 }));
+            nose.position.set(0, 0.4, 2.7);
+            group.add(nose);
+
+            // Visible Eyes (White sclera, black pupil)
+            const eyeWhiteGeo = new THREE.SphereGeometry(0.4, 16, 16);
+            const eyeWhiteMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+            const pupilGeo = new THREE.SphereGeometry(0.15, 16, 16);
+            const pupilMat = new THREE.MeshBasicMaterial({ color: 0x000000 });
+
+            // Right Eye
+            const rightEye = new THREE.Group();
+            rightEye.add(new THREE.Mesh(eyeWhiteGeo, eyeWhiteMat));
+            const rPupil = new THREE.Mesh(pupilGeo, pupilMat);
+            rPupil.position.set(0, 0, 0.32); // Push pupil to surface
+            rightEye.add(rPupil);
+            rightEye.position.set(0.8, 1.2, 2.5);
+            group.add(rightEye);
+
+            // Left Eye
+            const leftEye = new THREE.Group();
+            leftEye.add(new THREE.Mesh(eyeWhiteGeo, eyeWhiteMat));
+            const lPupil = new THREE.Mesh(pupilGeo, pupilMat);
+            lPupil.position.set(0, 0, 0.32);
+            leftEye.add(lPupil);
+            leftEye.position.set(-0.8, 1.2, 2.5);
+            group.add(leftEye);
+
+            return group;
+        }
+
+        // ==========================================
+        // 3. STATIC ANCHORS & KINEMATIC CHAIN
+        // ==========================================
+        
+        const frameGroup = new THREE.Group();
+        scene.add(frameGroup);
+
+        // Ground Grid
+        const grid = new THREE.GridHelper(20, 20, 0x1e293b, 0x0f172a);
+        grid.position.y = -2;
+        frameGroup.add(grid);
+
+        // Sternum (Manubrium)
+        const sternumGeo = new THREE.BoxGeometry(1.2, 1.8, 0.3);
+        const sternum = createBone(sternumGeo);
+        sternum.position.set(0, 1.5, 1.6);
+        sternum.rotation.x = -0.1;
+        frameGroup.add(sternum);
+
+        // Clavicles (Collarbones)
+        const clavicleGeo = new THREE.CylinderGeometry(0.18, 0.18, 4.5, 8);
+        
+        const rightClavicle = createBone(clavicleGeo);
+        rightClavicle.position.set(2.0, 2.4, 1.2);
+        rightClavicle.rotation.z = Math.PI / 2;
+        rightClavicle.rotation.y = -0.3; // Angle back
+        frameGroup.add(rightClavicle);
+
+        const leftClavicle = createBone(clavicleGeo);
+        leftClavicle.position.set(-2.0, 2.4, 1.2);
+        leftClavicle.rotation.z = Math.PI / 2;
+        leftClavicle.rotation.y = 0.3; // Angle back
+        frameGroup.add(leftClavicle);
+
+        // First Rib (Connecting T1 roughly to Sternum)
+        const rib1Geo = new THREE.TorusGeometry(1.6, 0.15, 8, 32);
+        const rib1 = createBone(rib1Geo);
+        rib1.position.set(0, 1.8, 0.6);
+        rib1.rotation.x = Math.PI / 2 - 0.25; // Tilted slightly down towards the front
+        frameGroup.add(rib1);
+
+        // Thoracic Base (T1-T3)
+        for(let i=0; i<3; i++) {
+            const tGeo = new THREE.CylinderGeometry(0.7, 0.7, 0.7, 16);
+            const tBone = createBone(tGeo);
+            tBone.position.set(0, i*0.8, 0.5);
+            frameGroup.add(tBone);
+        }
+
+        // Hierarchical Array to hold joints [C7, C6, C5, C4, C3, C2, C1, Skull]
+        const joints = [];
+        let currentParent = frameGroup;
+        const segmentHeight = 0.9; 
+        const levels = ['C7', 'C6', 'C5', 'C4', 'C3', 'C2', 'C1'];
+
+        // Build Cervical Chain
+        levels.forEach((level, index) => {
+            const joint = new THREE.Group();
+            joint.rotation.order = 'YXZ'; 
+            
+            const yPos = index === 0 ? 3.0 : segmentHeight;
+            joint.position.set(0, yPos, 0); 
+            joint.userData = { defaultX: 0, defaultY: yPos, defaultZ: 0 }; // Store defaults for translation math
+            
+            const bone = createVertebra(level);
+            joint.add(bone);
+            
+            currentParent.add(joint);
+            joints.push(joint);
+            currentParent = joint; 
+        });
+
+        // Add Skull (C0-C1)
+        const skullJoint = new THREE.Group();
+        skullJoint.rotation.order = 'YXZ';
+        const skullYPos = segmentHeight - 0.2;
+        skullJoint.position.set(0, skullYPos, 0.2); 
+        skullJoint.userData = { defaultX: 0, defaultY: skullYPos, defaultZ: 0.2 };
+        
+        const skullBone = createSkull();
+        skullJoint.add(skullBone);
+        
+        currentParent.add(skullJoint);
+        joints.push(skullJoint);
+
+        // Global Axes Helper attached to static frame
+        const axesHelper = new THREE.AxesHelper(5);
+        axesHelper.position.set(0, 3.0, 0);
+        frameGroup.add(axesHelper);
+
+        // ==========================================
+        // 4. BIOMECHANICAL MOTION LOGIC
+        // ==========================================
+        
+        function updateKinematics(degX, degY, degZ, mmT) {
+            const radX = degX * (Math.PI / 180); 
+            const radY = degY * (Math.PI / 180); 
+            const radZ = -degZ * (Math.PI / 180); 
+
+            // --- 1. ROTATIONAL KINEMATICS ---
+            // Distribution based on published segmental contribution data:
+            //   Flexion/Extension total ~120°: C0-C1 ~20%, C1-C2 ~10%, C2-C7 ~70%
+            //   Rotation total ~160°: C0-C1 ~0%, C1-C2 ~50%, C2-C7 ~50%
+            //   Lateral bending total ~90°: C0-C1 ~10%, C1-C2 ~0%, C2-C7 ~90%
+
+            // C0-C1 (Atlanto-occipital: primary flex/ext, minimal lat bend, no rotation)
+            joints[7].rotation.x = radX * 0.20; 
+            joints[7].rotation.y = 0;           
+            joints[7].rotation.z = radZ * 0.10; 
+
+            // C1-C2 (Atlantoaxial: primary rotation, small flex/ext contribution)
+            joints[6].rotation.x = radX * 0.10;           
+            joints[6].rotation.y = radY * 0.50; 
+            joints[6].rotation.z = 0;           
+
+            // Lower Cervical (C2-C7): weighted caudal gradient
+            // Segments increase in flex/ext contribution from C2-C3 to C6-C7
+            // joints[5]=C2, joints[4]=C3, joints[3]=C4, joints[2]=C5, joints[1]=C6, joints[0]=C7
+            const subaxialFlexExtWeights = [0.18, 0.20, 0.18, 0.16, 0.15, 0.13]; // C7→C2 (caudal to cranial)
+            const subaxialRotWeights =     [0.14, 0.17, 0.19, 0.19, 0.17, 0.14]; // relatively even with mid-peak
+            const subaxialLatWeights =     [0.14, 0.17, 0.19, 0.19, 0.17, 0.14]; // similar distribution
+
+            const totalSubaxialX = radX * 0.70; // 70% of total flex/ext
+            const totalSubaxialY = radY * 0.50; // 50% of total rotation
+            const totalSubaxialZ = radZ * 0.90; // 90% of total lateral bending
+
+            for (let i = 0; i <= 5; i++) {
+                joints[i].rotation.x = totalSubaxialX * subaxialFlexExtWeights[i];
+                joints[i].rotation.y = totalSubaxialY * subaxialRotWeights[i];
+                joints[i].rotation.z = totalSubaxialZ * subaxialLatWeights[i];
+
+                // Rotation-lateral bending coupling (Fryette's law):
+                // Subaxial cervical rotation couples with ipsilateral lateral bending
+                // Coupling ratio approximately 0.5-0.7° lateral bend per 1° rotation
+                const couplingRatio = 0.6;
+                joints[i].rotation.z += joints[i].rotation.y * couplingRatio * 0.15; // subtle visual coupling
+            }
+
+            // --- 2. TRANSLATIONAL SHEAR (Forward/Backward Head Posture) ---
+            // 50mm max translation mapped to ~0.25 local Three.js units per joint
+            const shearZ = (mmT / 50) * 0.25; 
+            
+            // Calculate a slight Y-drop to maintain anatomical "string length" of the neck
+            // This prevents the neck from visually stretching out when shearing forward
+            const L = segmentHeight;
+            const dropY = (L * L > shearZ * shearZ) ? (Math.sqrt(L * L - shearZ * shearZ) - L) : 0;
+
+            joints.forEach((j, i) => {
+                // Apply cumulative shear offset
+                j.position.z = j.userData.defaultZ + shearZ;
+                j.position.y = j.userData.defaultY + dropY;
+            });
+        }
+
+
+        // ==========================================
+        // 5. UI INTERACTION, ANIMATION & LOGGING
+        // ==========================================
+        
+        const sliderX = document.getElementById('slider-x');
+        const sliderY = document.getElementById('slider-y');
+        const sliderZ = document.getElementById('slider-z');
+        const sliderT = document.getElementById('slider-t');
+        
+        const valX = document.getElementById('val-x');
+        const valY = document.getElementById('val-y');
+        const valZ = document.getElementById('val-z');
+        const valT = document.getElementById('val-t');
+        
+        const btnReset = document.getElementById('btn-reset');
+        const btnLog = document.getElementById('btn-log');
+        const logArea = document.getElementById('log-area');
+        const emptyState = document.getElementById('empty-state');
+
+        let logCount = 0;
+        let logData = []; // Array to store logs for export/import
+        let sliderAnimationId = null;
+
+        // --- Smooth Animation Function ---
+        function animateSliders(targetX, targetY, targetZ, targetT, duration = 600) {
+            if (sliderAnimationId) {
+                cancelAnimationFrame(sliderAnimationId);
+            }
+
+            const startX = parseFloat(sliderX.value);
+            const startY = parseFloat(sliderY.value);
+            const startZ = parseFloat(sliderZ.value);
+            const startT = parseFloat(sliderT.value);
+
+            const startTime = performance.now();
+
+            function step(currentTime) {
+                const elapsed = currentTime - startTime;
+                const progress = Math.min(elapsed / duration, 1);
+                
+                // Quartic ease-out for smooth settle
+                const ease = 1 - Math.pow(1 - progress, 4);
+
+                sliderX.value = startX + (targetX - startX) * ease;
+                sliderY.value = startY + (targetY - startY) * ease;
+                sliderZ.value = startZ + (targetZ - startZ) * ease;
+                sliderT.value = startT + (targetT - startT) * ease;
+
+                onSliderInput();
+
+                if (progress < 1) {
+                    sliderAnimationId = requestAnimationFrame(step);
+                } else {
+                    sliderAnimationId = null;
+                }
+            }
+
+            sliderAnimationId = requestAnimationFrame(step);
+        }
+
+        // Cancel animation if the user manually grabs a slider
+        const cancelSliderAnimation = () => {
+            if (sliderAnimationId) {
+                cancelAnimationFrame(sliderAnimationId);
+                sliderAnimationId = null;
+            }
+        };
+        sliderX.addEventListener('pointerdown', cancelSliderAnimation);
+        sliderY.addEventListener('pointerdown', cancelSliderAnimation);
+        sliderZ.addEventListener('pointerdown', cancelSliderAnimation);
+        sliderT.addEventListener('pointerdown', cancelSliderAnimation);
+
+
+        function onSliderInput() {
+            const vX = parseInt(sliderX.value);
+            const vY = parseInt(sliderY.value);
+            const vZ = parseInt(sliderZ.value);
+            const vT = parseInt(sliderT.value);
+
+            valX.textContent = (vX > 0 ? '+' : '') + vX + '°';
+            valY.textContent = (vY > 0 ? '+' : '') + vY + '°';
+            valZ.textContent = (vZ > 0 ? '+' : '') + vZ + '°';
+            valT.textContent = (vT > 0 ? '+' : '') + vT + 'mm';
+
+            updateKinematics(vX, vY, vZ, vT);
+        }
+
+        sliderX.addEventListener('input', onSliderInput);
+        sliderY.addEventListener('input', onSliderInput);
+        sliderZ.addEventListener('input', onSliderInput);
+        sliderT.addEventListener('input', onSliderInput);
+
+        btnReset.addEventListener('click', () => {
+            // Smooth animate back to 0 instead of snapping
+            animateSliders(0, 0, 0, 0);
+        });
+
+        function renderLogs() {
+            logArea.innerHTML = '';
+            if (logData.length === 0) {
+                logArea.innerHTML = `<div id="empty-state" class="text-center text-slate-400 text-sm italic mt-6 px-4">Move sliders to the point of pain/resistance, then log the entry. Hard limits reflect true anatomical restrictions.</div>`;
+                return;
+            }
+
+            // Loop in reverse to show newest first
+            [...logData].reverse().forEach((entry) => {
+                const logEntry = document.createElement('div');
+                logEntry.className = "bg-white p-3 rounded shadow-sm border border-slate-200 cursor-pointer hover:border-sky-400 hover:shadow-md transition-all group";
+                logEntry.title = "Click to load this position";
+                logEntry.innerHTML = `
+                    <div class="flex justify-between items-center mb-2 pb-2 border-b border-slate-100 group-hover:border-sky-100">
+                        <span class="font-bold text-slate-700 text-xs group-hover:text-sky-600">ROM Log #${entry.id}</span>
+                        <span class="text-[10px] text-slate-400 font-mono">${entry.time}</span>
+                    </div>
+                    <div class="grid grid-cols-2 lg:grid-cols-4 gap-2 text-center">
+                        <div class="bg-red-50 p-1.5 rounded border border-red-100">
+                            <div class="text-[9px] text-red-400 font-bold uppercase">Sagittal</div>
+                            <div class="font-bold text-red-600 text-sm my-0.5">${entry.x > 0 ? '+'+entry.x : entry.x}°</div>
+                            <div class="text-[9px] text-slate-600 truncate">${entry.descX}</div>
+                        </div>
+                        <div class="bg-green-50 p-1.5 rounded border border-green-100">
+                            <div class="text-[9px] text-green-400 font-bold uppercase">Transverse</div>
+                            <div class="font-bold text-green-600 text-sm my-0.5">${entry.y > 0 ? '+'+entry.y : entry.y}°</div>
+                            <div class="text-[9px] text-slate-600 truncate">${entry.descY}</div>
+                        </div>
+                        <div class="bg-blue-50 p-1.5 rounded border border-blue-100">
+                            <div class="text-[9px] text-blue-400 font-bold uppercase">Coronal</div>
+                            <div class="font-bold text-blue-600 text-sm my-0.5">${entry.z > 0 ? '+'+entry.z : entry.z}°</div>
+                            <div class="text-[9px] text-slate-600 truncate">${entry.descZ}</div>
+                        </div>
+                        <div class="bg-amber-50 p-1.5 rounded border border-amber-100">
+                            <div class="text-[9px] text-amber-500 font-bold uppercase">Translation</div>
+                            <div class="font-bold text-amber-600 text-sm my-0.5">${entry.t > 0 ? '+'+entry.t : entry.t}mm</div>
+                            <div class="text-[9px] text-slate-600 truncate">${entry.descT}</div>
+                        </div>
+                    </div>
+                `;
+                
+                // Add click event to animate values
+                logEntry.addEventListener('click', () => {
+                    animateSliders(entry.x, entry.y, entry.z, entry.t);
+                });
+                
+                logArea.appendChild(logEntry);
+            });
+        }
+
+        btnLog.addEventListener('click', () => {
+            logCount++;
+            
+            const vX = parseInt(sliderX.value);
+            const vY = parseInt(sliderY.value);
+            const vZ = parseInt(sliderZ.value);
+            const vT = parseInt(sliderT.value);
+
+            let descX = vX === 0 ? "Neutral" : (vX > 0 ? "Flexion" : "Extension");
+            let descY = vY === 0 ? "Neutral" : (vY > 0 ? "Left Rot." : "Right Rot.");
+            let descZ = vZ === 0 ? "Neutral" : (vZ > 0 ? "Left Bend" : "Right Bend");
+            let descT = vT === 0 ? "Neutral" : (vT > 0 ? "Protrusion" : "Retraction");
+
+            const newLog = {
+                id: logCount,
+                time: new Date().toLocaleTimeString(),
+                x: vX, y: vY, z: vZ, t: vT,
+                descX, descY, descZ, descT
+            };
+
+            logData.push(newLog);
+            renderLogs();
+        });
+
+        // Export Logs to JSON
+        document.getElementById('btn-export').addEventListener('click', () => {
+            if (logData.length === 0) return alert("No logs to export!");
+            const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(logData, null, 2));
+            const dlAnchorElem = document.createElement('a');
+            dlAnchorElem.setAttribute("href", dataStr);
+            dlAnchorElem.setAttribute("download", "cervical_rom_logs.json");
+            dlAnchorElem.click();
+            dlAnchorElem.remove();
+        });
+
+        // Import Logs from JSON
+        const fileImport = document.getElementById('file-import');
+        document.getElementById('btn-import').addEventListener('click', () => fileImport.click());
+        
+        fileImport.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                try {
+                    const imported = JSON.parse(event.target.result);
+                    if (Array.isArray(imported)) {
+                        logData = imported;
+                        // Update log count to highest ID to prevent overlaps on new logs
+                        logCount = logData.length > 0 ? Math.max(...logData.map(l => l.id)) : 0;
+                        renderLogs();
+                    } else {
+                        alert("Invalid file format. Please upload a valid JSON log file.");
+                    }
+                } catch (err) {
+                    alert("Error parsing file.");
+                }
+            };
+            reader.readAsText(file);
+            fileImport.value = ''; // Reset input so the same file can be uploaded again
+        });
+
+        // ==========================================
+        // 6. VIEW CUBE & CAMERA CONTROL LOGIC
+        // ==========================================
+        
+        const viewCube = document.getElementById('view-cube');
+        const viewCubeContainer = document.querySelector('.view-cube-container');
+        let isAnimatingCamera = false;
+        
+        // Drag-to-rotate Variables
+        let isDraggingCube = false;
+        let hasDraggedCube = false; // Distinguish between drag and click
+        let previousMousePosition = { x: 0, y: 0 };
+
+        // Define up/right vectors for each face to dynamically calculate corner/edge targets
+        const faceConfigs = {
+            'front':  { base: [0, 0, 1],  up: [0, 1, 0],  right: [1, 0, 0],  text: 'FRONT' },
+            'back':   { base: [0, 0, -1], up: [0, 1, 0],  right: [-1, 0, 0], text: 'BACK' },
+            'right':  { base: [1, 0, 0],  up: [0, 1, 0],  right: [0, 0, -1], text: 'RIGHT' },
+            'left':   { base: [-1, 0, 0], up: [0, 1, 0],  right: [0, 0, 1],  text: 'LEFT' },
+            'top':    { base: [0, 1, 0],  up: [0, 0, -1], right: [1, 0, 0],  text: 'TOP' },
+            'bottom': { base: [0, -1, 0], up: [0, 0, 1],  right: [1, 0, 0],  text: 'BTM' }
+        };
+
+        // Generate the 3x3 interactive grid (corners, edges, center) for each face
+        document.querySelectorAll('.vc-face').forEach(faceEl => {
+            const faceName = faceEl.dataset.face;
+            const config = faceConfigs[faceName];
+
+            for (let row = -1; row <= 1; row++) {
+                for (let col = -1; col <= 1; col++) {
+                    const zone = document.createElement('div');
+                    zone.className = 'vc-zone';
+
+                    // Calculate vector direction for this specific zone (corner, edge, or center)
+                    const vx = config.base[0] + config.up[0]*(-row) + config.right[0]*(col);
+                    const vy = config.base[1] + config.up[1]*(-row) + config.right[1]*(col);
+                    const vz = config.base[2] + config.up[2]*(-row) + config.right[2]*(col);
+
+                    zone.dataset.vx = vx;
+                    zone.dataset.vy = vy;
+                    zone.dataset.vz = vz;
+
+                    if (row === 0 && col === 0) {
+                        zone.textContent = config.text;
+                        zone.style.display = 'flex';
+                        zone.style.alignItems = 'center';
+                        zone.style.justifyContent = 'center';
+                        zone.style.fontWeight = '900';
+                        zone.style.fontSize = '12px';
+                    }
+
+                    zone.addEventListener('click', (e) => {
+                        if (hasDraggedCube) return; // Prevent snap if we were dragging the cube
+                        snapToVector(vx, vy, vz);
+                    });
+
+                    faceEl.appendChild(zone);
+                }
+            }
+        });
+
+        // Continuously orient the CSS ViewCube to match the Three.js camera
+        function updateViewCube() {
+            if (!viewCube) return;
+            const camPos = camera.position.clone().sub(controls.target);
+            const radius = camPos.length();
+            const theta = Math.atan2(camPos.x, camPos.z);
+            const phi = Math.acos(Math.max(-1, Math.min(1, camPos.y / radius)));
+            
+            const rotX = (phi - Math.PI / 2) * (180 / Math.PI);
+            const rotY = -theta * (180 / Math.PI);
+            
+            viewCube.style.transform = `translateZ(-30px) rotateX(${rotX}deg) rotateY(${rotY}deg)`;
+        }
+
+        function snapToVector(vx, vy, vz) {
+            if (isAnimatingCamera) return;
+            
+            const targetVec = new THREE.Vector3(vx, vy, vz).normalize();
+            const radius = camera.position.distanceTo(controls.target);
+            
+            // Prevent perfect vertical gimbal lock
+            if (targetVec.x === 0 && targetVec.z === 0) targetVec.x = 0.001;
+
+            const endPos = new THREE.Vector3().copy(controls.target).add(targetVec.multiplyScalar(radius));
+            const startPos = camera.position.clone();
+            const duration = 600; 
+            const startTime = performance.now();
+            isAnimatingCamera = true;
+
+            function animateCamera(time) {
+                const elapsed = time - startTime;
+                const progress = Math.min(elapsed / duration, 1);
+                const ease = 1 - Math.pow(1 - progress, 4); // Quartic ease out
+                
+                camera.position.lerpVectors(startPos, endPos, ease);
+                camera.lookAt(controls.target);
+                controls.update();
+                
+                if (progress < 1) requestAnimationFrame(animateCamera);
+                else isAnimatingCamera = false;
+            }
+            requestAnimationFrame(animateCamera);
+        }
+
+        // --- Drag to Rotate Implementation ---
+        viewCubeContainer.addEventListener('mousedown', (e) => {
+            isDraggingCube = true;
+            hasDraggedCube = false;
+            previousMousePosition = { x: e.clientX, y: e.clientY };
+            e.stopPropagation(); // Don't let OrbitControls intercept
+        });
+
+        window.addEventListener('mousemove', (e) => {
+            if (!isDraggingCube) return;
+
+            const deltaMove = {
+                x: e.clientX - previousMousePosition.x,
+                y: e.clientY - previousMousePosition.y
+            };
+
+            // Threshold to switch from "click" to "drag" mode
+            if (Math.abs(deltaMove.x) > 2 || Math.abs(deltaMove.y) > 2) {
+                hasDraggedCube = true;
+            }
+
+            if (hasDraggedCube) {
+                isAnimatingCamera = false; // Cancel any ongoing snap animation
+                
+                // Orbit the camera mathematically
+                const camOffset = camera.position.clone().sub(controls.target);
+                const spherical = new THREE.Spherical().setFromVector3(camOffset);
+
+                spherical.theta -= deltaMove.x * 0.01;
+                spherical.phi -= deltaMove.y * 0.01;
+                
+                // Clamp vertical angle to prevent flipping
+                spherical.phi = Math.max(0.01, Math.min(Math.PI - 0.01, spherical.phi));
+
+                camOffset.setFromSpherical(spherical);
+                camera.position.copy(controls.target).add(camOffset);
+                camera.lookAt(controls.target);
+                controls.update();
+            }
+
+            previousMousePosition = { x: e.clientX, y: e.clientY };
+        });
+
+        window.addEventListener('mouseup', () => {
+            isDraggingCube = false;
+        });
+
+        // ==========================================
+        // 7. RENDER LOOP & RESIZING
+        // ==========================================
+        
+        window.addEventListener('resize', () => {
+            camera.aspect = container.clientWidth / container.clientHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(container.clientWidth, container.clientHeight);
+        });
+
+        function animate() {
+            requestAnimationFrame(animate);
+            controls.update(); 
+            updateViewCube(); // Continuously sync cube rotation to scene
+            renderer.render(scene, camera);
+        }
+
+        onSliderInput();
+        window.onload = animate;
+
+    </script>
+</body>
+</html>
